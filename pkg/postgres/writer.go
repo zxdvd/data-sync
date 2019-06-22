@@ -27,11 +27,37 @@ func NewWriter(uri string, tablename string, columns []map[string]string, pks []
 	}
 }
 
+func getColumnStr(columns []string) string {
+	return "\"" + strings.Join(columns, `","`) + "\""
+}
+
 func (w *writer) BulkInsert(rows [][]interface{}) error {
-	for _, row := range rows {
-		if err := w.Insert(row); err != nil {
-			return err
+	var q strings.Builder
+	fmt.Fprintf(&q, "INSERT INTO %s (%s) VALUES", w.tablename, getColumnStr(w.GetColumns()))
+
+	pos := 0
+	var expandedRows []interface{}
+	for i := 0; i < len(rows); i++ {
+		expandedRows = append(expandedRows, rows[i]...)
+		if i != 0 {
+			q.WriteString(",")
 		}
+		row := rows[i]
+		params := make([]string, len(row))
+		for j := 0; j < len(row); j++ {
+			pos++
+			params[j] = "$" + strconv.Itoa(pos)
+		}
+		fmt.Fprintf(&q, "(%s)", strings.Join(params, ","))
+
+	}
+	var result interface{}
+	err := w.conn.DB.QueryRow(q.String(), expandedRows...).Scan(&result)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
 	}
 	return nil
 }
