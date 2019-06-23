@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"context"
 	"database/sql"
 
 	_ "github.com/lib/pq"
@@ -9,37 +8,25 @@ import (
 
 type conn struct {
 	uri string
-	DB  *sql.DB
+	db  *sql.DB
 }
 
-func (c *conn) Open() error {
-	db, err := sql.Open("postgres", c.uri)
-	c.DB = db
-	return err
-}
-
-type reader struct {
+type table struct {
 	*conn
 	tablename string
-	ctx       context.Context
-	// select a as A1, b as BB
-	colAsMap map[string]string
-	// [id, A1, BB]
-	columns []string
+	columns   []sql.ColumnType
+	pks       []sql.ColumnType
 }
 
 type column struct {
-	name string
-	typ  string
+	*sql.ColumnType
 }
 
-type writer struct {
-	*conn
-	tablename    string
-	ctx          context.Context
-	columns      []column
-	pks          []string
-	createOption string
+type reader struct {
+	table
+	// [id, A1, BB]
+	columns     []string
+	columnTypes []*sql.ColumnType
 }
 
 type batchReader struct {

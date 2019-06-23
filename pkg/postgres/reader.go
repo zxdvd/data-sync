@@ -5,14 +5,13 @@ import (
 	"strings"
 
 	"github.com/zxdvd/data-sync/pkg/common"
+	"github.com/zxdvd/data-sync/pkg/utils/sql"
 )
 
-func NewReader(uri string, tablename string, colsAsMap map[string]string) *reader {
+func NewReader(uri string, tablename string) *reader {
 	conn_ := &conn{uri: uri}
 	return &reader{
-		conn:      conn_,
-		tablename: tablename,
-		colAsMap:  colsAsMap,
+		table: table{conn: conn_, tablename: tablename},
 	}
 }
 
@@ -24,47 +23,43 @@ func NewBatchReader(r *reader, size int, orderby string) *batchReader {
 	}
 }
 
-func (r *reader) SetColumns(columns []string) {
-	cols := make([]string, len(columns), len(columns))
-	for i, col := range columns {
-		if val, ok := r.colAsMap[col]; ok {
-			cols[i] = fmt.Sprintf(`%s AS "%s"`, val, col)
-		} else {
-			cols[i] = col
-		}
-	}
-	r.columns = cols
+func (r *reader) SetSelectColumns(columns []string) {
+	r.columns = columns
 }
+
+func (r *reader) getSelectSql() string {
+	q := fmt.Sprintf(`SELECT %s FROM "%s" `,
+		strings.Join(r.columns, `,`),
+		r.tablename)
+	return q
+}
+
+func (r *reader) ColumnTypes() ([]common.Column, error) {
+	q := r.getSelectSql() + " WHERE 1=0"
+	colTypes, _, err := sql.Query(r.DB(), q)
+	r.columnTypes = colTypes
+	cols := make([]common.Column, len(colTypes))
+	for i, colType := range colTypes {
+		cols[i] = column{colType}
+	}
+	return cols, err
+}
+
+var _ common.Reader = &reader{}
 
 func (br *batchReader) SetPosition(pos int) {
 	br.pos = pos
 }
 
-func (br *batchReader) Read() ([][]interface{}, error) {
-	q := fmt.Sprintf(`SELECT "%s" FROM "%s" ORDER BY %s offset %d limit %d`,
-		strings.Join(br.columns, `","`),
-		br.tablename,
-		br.orderby,
-		br.pos, br.batchsize)
+func (br *batchReader) BulkRead() ([][]interface{}, error) {
+	q := br.getSelectSql() + fmt.Sprintf("ORDER BY %s OFFSET %d LIMIT %d", br.orderby, br.pos, br.batchsize)
 	// TODO query result
-	fmt.Println(q)
-	rows, err := br.conn.DB.Query(q)
+	colTypes, rows, err := sql.Query(br.DB(), q)
 	if err != nil {
 		return nil, err
 	}
-	results := make([][]interface{}, 0)
-	for rows.Next() {
-		vals := make([]interface{}, len(br.columns))
-		valpoints := make([]interface{}, len(br.columns))
-		for i, _ := range vals {
-			valpoints[i] = &vals[i]
-		}
-		if err := rows.Scan(valpoints...); err != nil {
-			return nil, err
-		}
-		results = append(results, vals)
-	}
-	return results, nil
+	br.pos += len(rows)
+	return rows, nil
 }
 
-var _ common.BatchReader = &batchReader{}
+var _ common.BulkReader = &batchReader{}

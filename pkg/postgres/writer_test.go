@@ -5,15 +5,11 @@ import "testing"
 func TestNewWriter(t *testing.T) {
 	pguri := "postgres://postgres@localhost:5432/test1?sslmode=disable"
 	w := NewWriter(pguri, "w1",
-		[]map[string]string{
-			{"name": "a", "type": "int"},
-			{"name": "b", "type": "text"},
-		},
 		[]string{"id"})
 	if err := w.Open(); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.DB.Ping(); err != nil {
+	if err := w.DB().Ping(); err != nil {
 		t.Fatal(err)
 	}
 

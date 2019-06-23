@@ -3,37 +3,30 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	"github.com/zxdvd/data-sync/pkg/common"
 )
 
-func NewWriter(uri string, tablename string, columns []map[string]string, pks []string) *writer {
-	columns_ := make([]column, len(columns))
-	for i, col := range columns {
-		columns_[i] = column{
-			name: col["name"],
-			typ:  col["type"],
-		}
-	}
-	conn_ := &conn{uri: uri}
-	return &writer{
-		conn:      conn_,
-		tablename: tablename,
-		columns:   columns_,
-		pks:       pks,
-	}
+type writer struct {
+	table
+	columnNames []string
+	columns     []column
+	pks         []string
 }
 
-func getColumnStr(columns []string) string {
-	return "\"" + strings.Join(columns, `","`) + "\""
+func NewWriter(uri string, tablename string, pks []string) *writer {
+	conn_ := &conn{uri: uri}
+	return &writer{
+		table: table{conn: conn_, tablename: tablename},
+		pks:   pks,
+	}
 }
 
 func (w *writer) BulkInsert(rows [][]interface{}) error {
 	var q strings.Builder
-	fmt.Fprintf(&q, "INSERT INTO %s (%s) VALUES", w.tablename, getColumnStr(w.GetColumns()))
+	fmt.Fprintf(&q, "INSERT INTO %s (%s) VALUES", w.tablename, strings.Join(w.GetColumns(), ","))
 
 	pos := 0
 	var expandedRows []interface{}
@@ -52,7 +45,7 @@ func (w *writer) BulkInsert(rows [][]interface{}) error {
 
 	}
 	var result interface{}
-	err := w.conn.DB.QueryRow(q.String(), expandedRows...).Scan(&result)
+	err := w.DB().QueryRow(q.String(), expandedRows...).Scan(&result)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -71,26 +64,36 @@ func (w *writer) Insert(row []interface{}) error {
 	q := fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s)`,
 		w.tablename, strings.Join(cols, ","),
 		strings.Join(positionParams, ","))
-	log.Println(q)
 	// q = "insert abc"
 	var result interface{}
-	err := w.conn.DB.QueryRow(q, row...).Scan(&result)
+	err := w.DB().QueryRow(q, row...).Scan(&result)
 	if err == sql.ErrNoRows {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	log.Println("result", result)
 	return nil
 }
 
 func (w *writer) GetColumns() []string {
-	cols := make([]string, len(w.columns))
-	for i, col := range w.columns {
-		cols[i] = col.name
+	cols := make([]string, len(w.columnNames))
+	for i, colName := range w.columnNames {
+		cols[i] = w.Quote(colName)
 	}
 	return cols
+}
+
+func (w *writer) SetColumnTypes(colTypes []common.Column) {
+	columns := make([]column, len(colTypes))
+	for i, colType := range colTypes {
+		columns[i] = colType.(column)
+	}
+	w.columns = columns
+}
+
+func (w *writer) SetColumnNames(cols []string) {
+	w.columnNames = cols
 }
 
 var _ common.Writer = &writer{}
