@@ -31,7 +31,20 @@ func (c *conn) DB() *sql.DB {
 
 var _ common.Conn = &conn{}
 
+type column struct {
+	*sql.ColumnType
+	name string
+	typ  string
+}
+
+func (col column) Dialect() string {
+	return dialect
+}
+
 func (col column) Type() string {
+	if col.typ != "" {
+		return col.typ
+	}
 	return strings.ToLower(col.DatabaseTypeName())
 }
 
@@ -59,21 +72,39 @@ func (col column) TypeFromSTD(std string) string {
 
 var _ common.Column = column{}
 
+func (t *table) Exists() (bool, error) {
+	q := fmt.Sprintf("SELECT to_regclass('%s')", t.Quote(t.tablename))
+	var existed bool
+	err := t.DB().QueryRow(q).Scan(&existed)
+	return existed, err
+}
+
+func (t *table) DropTable(cascade bool) error {
+	q := fmt.Sprintf("DROP TABLE %s ", t.Quote(t.tablename))
+	if cascade {
+		q += " CASCADE"
+	}
+	_, err := t.DB().Exec(q)
+	return err
+}
+
+func (t *table) AllColumns() ([]common.Column, error) {
+	q := fmt.Sprintf("SELECT * FROM %s WHERE 1=0", t.Quote(t.tablename))
+	colTypes, _, err := utilsql.Query(t.DB(), q)
+	return convertColumnTypes(colTypes), err
+}
+
 func (t *table) GetSQLCreateTable() string {
 	var s strings.Builder
 	fmt.Fprintf(&s, "CREATE TABLE %s (", t.Quote(t.tablename))
 
 	lines := make([]string, len(t.columns)+1)
 	for i, col := range t.columns {
-		lines[i] = t.Quote(col.Name()) + col.DatabaseTypeName()
+		lines[i] = t.Quote(col.Name()) + col.Type()
 	}
 	// deal with PRIMARY KEY (a,b)
 	if len(t.pks) > 0 {
-		pks_ := make([]string, len(t.pks))
-		for i, pk := range t.pks {
-			pks_[i] = t.Quote(pk.Name())
-		}
-		pkline := fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(pks_, ","))
+		pkline := fmt.Sprintf("PRIMARY KEY (%s)", QuoteAndJoin(t.pks))
 		lines = append(lines, pkline)
 	}
 	fmt.Fprintf(&s, "%s)", strings.Join(lines, ","))
@@ -84,5 +115,18 @@ func (t *table) CreateTable() error {
 	q := t.GetSQLCreateTable()
 	_, _, err := utilsql.Query(t.DB(), q)
 	return err
+
+}
+
+func QuoteAndJoin(cols []string) string {
+	return "\"" + strings.Join(cols, ",") + "\""
+}
+
+func convertColumnTypes(cols []*sql.ColumnType) []common.Column {
+	columns := make([]common.Column, len(cols))
+	for i, colType := range cols {
+		columns[i] = column{ColumnType: colType}
+	}
+	return columns
 
 }

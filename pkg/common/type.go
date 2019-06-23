@@ -7,7 +7,7 @@ type Conn interface {
 }
 
 type Reader interface {
-	Dialect() string
+	Table
 	SetSelectColumns([]string)
 	ColumnTypes() ([]Column, error)
 }
@@ -18,11 +18,10 @@ type BulkReader interface {
 }
 
 type Writer interface {
-	Dialect() string
+	Table
 	SetColumnNames([]string)
 	SetColumnTypes([]Column)
 	Insert(rows []interface{}) error
-	CreateTable() error
 }
 
 type BulkWriter interface {
@@ -31,6 +30,7 @@ type BulkWriter interface {
 }
 
 type Column interface {
+	Dialect() string
 	Type() string
 	Name() string
 	ToSTDType() string
@@ -39,5 +39,8 @@ type Column interface {
 
 type Table interface {
 	Conn
+	Exists() (bool, error)
 	CreateTable() error
+	DropTable(cascade bool) error
+	AllColumns() ([]Column, error)
 }

@@ -14,12 +14,8 @@ type conn struct {
 type table struct {
 	*conn
 	tablename string
-	columns   []sql.ColumnType
-	pks       []sql.ColumnType
-}
-
-type column struct {
-	*sql.ColumnType
+	columns   []column
+	pks       []string
 }
 
 type reader struct {
