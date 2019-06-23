@@ -29,6 +29,7 @@ func (r *reader) SetSelectColumns(columns []string) {
 
 func (r *reader) getSelectSql() string {
 	q := fmt.Sprintf(`SELECT %s FROM "%s" `,
+		// no need to quote here, since there maybe raw sql functions
 		strings.Join(r.columns, `,`),
 		r.tablename)
 	return q
@@ -38,10 +39,7 @@ func (r *reader) ColumnTypes() ([]common.Column, error) {
 	q := r.getSelectSql() + " WHERE 1=0"
 	colTypes, _, err := sql.Query(r.DB(), q)
 	r.columnTypes = colTypes
-	cols := make([]common.Column, len(colTypes))
-	for i, colType := range colTypes {
-		cols[i] = column{colType}
-	}
+	cols := convertColumnTypes(colTypes)
 	return cols, err
 }
 
@@ -54,7 +52,7 @@ func (br *batchReader) SetPosition(pos int) {
 func (br *batchReader) BulkRead() ([][]interface{}, error) {
 	q := br.getSelectSql() + fmt.Sprintf("ORDER BY %s OFFSET %d LIMIT %d", br.orderby, br.pos, br.batchsize)
 	// TODO query result
-	colTypes, rows, err := sql.Query(br.DB(), q)
+	_, rows, err := sql.Query(br.DB(), q)
 	if err != nil {
 		return nil, err
 	}

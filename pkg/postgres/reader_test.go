@@ -14,8 +14,8 @@ func TestNewReader(t *testing.T) {
 	}
 
 	br := NewBatchReader(r, 20, "id, created_at")
-	br.SetColumns([]string{"id::text as id1", "created_at", "a", "0 as n1"})
-	_, err := br.BulkReader()
+	br.SetSelectColumns([]string{"id::text as id1", "created_at", "a", "0 as n1"})
+	_, err := br.BulkRead()
 	if err != nil {
 		panic(err)
 		t.Fatal(err)

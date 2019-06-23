@@ -87,7 +87,15 @@ func (w *writer) GetColumns() []string {
 func (w *writer) SetColumnTypes(colTypes []common.Column) {
 	columns := make([]column, len(colTypes))
 	for i, colType := range colTypes {
-		columns[i] = colType.(column)
+		pgColumn := columns[i]
+		if colType.Dialect() == pgColumn.Dialect() {
+			columns[i] = colType.(column)
+		} else {
+			stdType := colType.ToSTDType()
+			pgColumn.name = colType.Name()
+			pgColumn.typ = pgColumn.TypeFromSTD(stdType)
+			columns[i] = pgColumn
+		}
 	}
 	w.columns = columns
 }
