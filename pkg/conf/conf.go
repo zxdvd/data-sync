@@ -21,23 +21,23 @@ type ColumnOptions struct {
 
 type CreateTableOptions struct {
 	Create      bool
-	DropExisted bool
-	DropCascade bool
+	DropExisted bool `yaml:"drop_existed"`
+	DropCascade bool `yaml:"drop_cascade"`
 	PKs         []string
 }
 
 type SyncTask struct {
-	Name         string
-	Sourcetable  string
-	Sourcedbname string  `yaml:"sourcedb"`
-	SourceDB     *DBHost `yaml:"-"`
-	Targettable  string
-	Targetdbname string  `yaml:"targetdb"`
-	TargetDB     *DBHost `yaml:"-"`
-	ColumnOptions
-	CreateTableOptions
-	Batchsize int
-	Orderby   string
+	Name               string
+	Sourcetable        string
+	Sourcedbname       string  `yaml:"sourcedb"`
+	SourceDB           *DBHost `yaml:"-"`
+	Targettable        string
+	Targetdbname       string  `yaml:"targetdb"`
+	TargetDB           *DBHost `yaml:"-"`
+	ColumnOptions      `yaml:"column_options"`
+	CreateTableOptions `yaml:"create_table_options"`
+	Batchsize          int
+	Orderby            string
 }
 
 type Conf struct {
