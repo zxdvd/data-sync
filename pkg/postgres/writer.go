@@ -11,16 +11,12 @@ import (
 
 type writer struct {
 	table
-	columnNames []string
-	columns     []column
-	pks         []string
 }
 
 func NewWriter(uri string, tablename string, pks []string) *writer {
 	conn_ := &conn{uri: uri}
 	return &writer{
-		table: table{conn: conn_, tablename: tablename},
-		pks:   pks,
+		table: table{conn: conn_, tablename: tablename, pks: pks},
 	}
 }
 
@@ -42,7 +38,6 @@ func (w *writer) BulkInsert(rows [][]interface{}) error {
 			params[j] = "$" + strconv.Itoa(pos)
 		}
 		fmt.Fprintf(&q, "(%s)", strings.Join(params, ","))
-
 	}
 	var result interface{}
 	err := w.DB().QueryRow(q.String(), expandedRows...).Scan(&result)
@@ -77,31 +72,11 @@ func (w *writer) Insert(row []interface{}) error {
 }
 
 func (w *writer) GetColumns() []string {
-	cols := make([]string, len(w.columnNames))
-	for i, colName := range w.columnNames {
-		cols[i] = w.Quote(colName)
+	cols := make([]string, len(w.columns))
+	for i, col := range w.columns {
+		cols[i] = w.Quote(col.Name())
 	}
 	return cols
-}
-
-func (w *writer) SetColumnTypes(colTypes []common.Column) {
-	columns := make([]column, len(colTypes))
-	for i, colType := range colTypes {
-		pgColumn := columns[i]
-		if colType.Dialect() == pgColumn.Dialect() {
-			columns[i] = colType.(column)
-		} else {
-			stdType := colType.ToSTDType()
-			pgColumn.name = colType.Name()
-			pgColumn.typ = pgColumn.TypeFromSTD(stdType)
-			columns[i] = pgColumn
-		}
-	}
-	w.columns = columns
-}
-
-func (w *writer) SetColumnNames(cols []string) {
-	w.columnNames = cols
 }
 
 var _ common.Writer = &writer{}

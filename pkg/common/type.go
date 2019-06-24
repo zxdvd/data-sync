@@ -19,8 +19,6 @@ type BulkReader interface {
 
 type Writer interface {
 	Table
-	SetColumnNames([]string)
-	SetColumnTypes([]Column)
 	Insert(rows []interface{}) error
 }
 
@@ -43,4 +41,5 @@ type Table interface {
 	CreateTable() error
 	DropTable(cascade bool) error
 	AllColumns() ([]Column, error)
+	SetColumnTypes([]Column)
 }

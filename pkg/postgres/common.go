@@ -74,9 +74,15 @@ var _ common.Column = column{}
 
 func (t *table) Exists() (bool, error) {
 	q := fmt.Sprintf("SELECT to_regclass('%s')", t.Quote(t.tablename))
-	var existed bool
-	err := t.DB().QueryRow(q).Scan(&existed)
-	return existed, err
+	var relationName sql.NullString
+	err := t.DB().QueryRow(q).Scan(&relationName)
+	if err != nil {
+		return false, err
+	}
+	if relationName.Valid {
+		return len(relationName.String) > 0, nil
+	}
+	return false, nil
 }
 
 func (t *table) DropTable(cascade bool) error {
@@ -98,9 +104,9 @@ func (t *table) GetSQLCreateTable() string {
 	var s strings.Builder
 	fmt.Fprintf(&s, "CREATE TABLE %s (", t.Quote(t.tablename))
 
-	lines := make([]string, len(t.columns)+1)
+	lines := make([]string, len(t.columns))
 	for i, col := range t.columns {
-		lines[i] = t.Quote(col.Name()) + col.Type()
+		lines[i] = t.Quote(col.Name()) + " " + col.Type()
 	}
 	// deal with PRIMARY KEY (a,b)
 	if len(t.pks) > 0 {
@@ -115,7 +121,22 @@ func (t *table) CreateTable() error {
 	q := t.GetSQLCreateTable()
 	_, _, err := utilsql.Query(t.DB(), q)
 	return err
+}
 
+func (t *table) SetColumnTypes(colTypes []common.Column) {
+	columns := make([]column, len(colTypes))
+	for i, colType := range colTypes {
+		pgColumn := columns[i]
+		if colType.Dialect() == pgColumn.Dialect() {
+			columns[i] = colType.(column)
+		} else {
+			stdType := colType.ToSTDType()
+			pgColumn.name = colType.Name()
+			pgColumn.typ = pgColumn.TypeFromSTD(stdType)
+			columns[i] = pgColumn
+		}
+	}
+	t.columns = columns
 }
 
 func QuoteAndJoin(cols []string) string {

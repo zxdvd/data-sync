@@ -6,7 +6,19 @@ import (
 	"github.com/zxdvd/data-sync/pkg/common"
 	"github.com/zxdvd/data-sync/pkg/conf"
 	pg "github.com/zxdvd/data-sync/pkg/postgres"
+	"go.uber.org/zap"
 )
+
+var defaultlogger *zap.Logger
+
+func init() {
+	var err error
+	defaultlogger, err = zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
+
+}
 
 type bulkSync struct {
 	reader         common.BulkReader
@@ -17,6 +29,7 @@ type bulkSync struct {
 	orderby        string
 	columnOpt      conf.ColumnOptions
 	createTableOpt conf.CreateTableOptions
+	log            *zap.Logger
 }
 
 func NewReader(dialect, uri, tablename string) common.Reader {
@@ -84,6 +97,7 @@ func SetupColumnOptions(r common.Reader, opt conf.ColumnOptions) ([]common.Colum
 func SetupTargetTable(w common.Writer, opt conf.CreateTableOptions, columns []common.Column) error {
 	if !opt.Create {
 		// do not create new table, so return directly
+		w.SetColumnTypes(columns)
 		return nil
 	}
 	existed, err := w.Exists()
@@ -92,8 +106,8 @@ func SetupTargetTable(w common.Writer, opt conf.CreateTableOptions, columns []co
 	}
 	if existed {
 		if !opt.DropExisted {
-			// do not drop table
-			return nil
+			// you choose create table, but NOT drop existed, so CONFLICT
+			return errors.New("create conflict with not drop existed")
 		}
 		// need to drop table
 		err := w.DropTable(opt.DropCascade)
@@ -106,21 +120,44 @@ func SetupTargetTable(w common.Writer, opt conf.CreateTableOptions, columns []co
 	return err
 }
 
-func NewSync(task *conf.SyncTask) *bulkSync {
+func NewSync(task *conf.SyncTask) (*bulkSync, error) {
 	sourcedb := task.SourceDB
+	if task.Batchsize <= 0 {
+		return nil, errors.New("batchsize must great than 0")
+	}
+	if task.Orderby == "" {
+		return nil, errors.New("must specify orderby of batch")
+	}
+	if sourcedb == nil {
+		return nil, errors.New("sourcedb should not be empty")
+	}
 	reader := NewBulkReader(sourcedb.Dialect, sourcedb.Uri, task.Sourcetable, task.Batchsize, task.Orderby)
 	targetdb := task.TargetDB
+	if targetdb == nil {
+		return nil, errors.New("targetdb should not be empty")
+	}
 	writer := NewBulkWriter(targetdb.Dialect, targetdb.Uri, task.Targettable, task.CreateTableOptions.PKs)
+
 	return &bulkSync{
 		reader:         reader,
 		writer:         writer,
 		batchsize:      task.Batchsize,
 		orderby:        task.Orderby,
 		columnOpt:      task.ColumnOptions,
-		createTableOpt: task.CreateTableOptions}
+		createTableOpt: task.CreateTableOptions,
+		log:            defaultlogger,
+	}, nil
 }
 
 func (s *bulkSync) Setup() error {
+	err := s.reader.Open()
+	if err != nil {
+		return err
+	}
+	err = s.writer.Open()
+	if err != nil {
+		return err
+	}
 	columns, err := SetupColumnOptions(s.reader, s.columnOpt)
 	if err != nil {
 		return err
@@ -130,8 +167,10 @@ func (s *bulkSync) Setup() error {
 }
 
 func (s *bulkSync) BulkSyncData() error {
+	s.log.Info("begin bulk sync data")
 	for {
 		rows, err := s.reader.BulkRead()
+		s.log.Info("rows count: ", zap.Int("count", len(rows)))
 		if err != nil {
 			return err
 		}
