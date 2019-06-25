@@ -1,11 +1,11 @@
 package sync
 
 import (
-	"errors"
+	"github.com/pkg/errors"
 
-	"github.com/zxdvd/data-sync/pkg/common"
 	"github.com/zxdvd/data-sync/pkg/conf"
-	pg "github.com/zxdvd/data-sync/pkg/postgres"
+	db "github.com/zxdvd/data-sync/pkg/database"
+	"github.com/zxdvd/data-sync/pkg/database/common"
 	"go.uber.org/zap"
 )
 
@@ -32,39 +32,12 @@ type bulkSync struct {
 	log            *zap.Logger
 }
 
-func NewReader(dialect, uri, tablename string) common.Reader {
-	if dialect == "postgres" {
-		return pg.NewReader(uri, tablename)
-	}
-	return nil
-}
-
-func NewWriter(dialect, uri, tablename string, pks []string) common.Writer {
-	return NewBulkWriter(dialect, uri, tablename, pks)
-}
-
-func NewBulkReader(dialect, uri, tablename string, batchsize int, orderby string) common.BulkReader {
-	switch dialect {
-	case "postgres":
-		return pg.NewBatchReader(pg.NewReader(uri, tablename), batchsize, orderby)
-	default:
-		return nil
-	}
-}
-
-func NewBulkWriter(dialect, uri, tablename string, pks []string) common.BulkWriter {
-	if dialect == "postgres" {
-		return pg.NewWriter(uri, tablename, pks)
-	}
-	return nil
-}
-
 func SetupColumnOptions(r common.Reader, opt conf.ColumnOptions) ([]common.Column, error) {
 	columnNames := make([]string, 0)
 	if opt.Selectall {
 		allcolumns, err := r.AllColumns()
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to get all columns")
 		}
 	outer:
 		for _, col := range allcolumns {
@@ -102,7 +75,7 @@ func SetupTargetTable(w common.Writer, opt conf.CreateTableOptions, columns []co
 	}
 	existed, err := w.Exists()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "error to check table exists")
 	}
 	if existed {
 		if !opt.DropExisted {
@@ -112,12 +85,12 @@ func SetupTargetTable(w common.Writer, opt conf.CreateTableOptions, columns []co
 		// need to drop table
 		err := w.DropTable(opt.DropCascade)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "error to drop table")
 		}
 	}
 	w.SetColumnTypes(columns)
 	err = w.CreateTable()
-	return err
+	return errors.Wrap(err, "failed to create table")
 }
 
 func NewSync(task *conf.SyncTask) (*bulkSync, error) {
@@ -131,12 +104,12 @@ func NewSync(task *conf.SyncTask) (*bulkSync, error) {
 	if sourcedb == nil {
 		return nil, errors.New("sourcedb should not be empty")
 	}
-	reader := NewBulkReader(sourcedb.Dialect, sourcedb.Uri, task.Sourcetable, task.Batchsize, task.Orderby)
+	reader := db.NewBulkReader(sourcedb.Dialect, sourcedb.Uri, task.Sourcetable, task.Batchsize, task.Orderby)
 	targetdb := task.TargetDB
 	if targetdb == nil {
 		return nil, errors.New("targetdb should not be empty")
 	}
-	writer := NewBulkWriter(targetdb.Dialect, targetdb.Uri, task.Targettable, task.CreateTableOptions.PKs)
+	writer := db.NewBulkWriter(targetdb.Dialect, targetdb.Uri, task.Targettable, task.CreateTableOptions.PKs)
 
 	return &bulkSync{
 		reader:         reader,
@@ -152,18 +125,18 @@ func NewSync(task *conf.SyncTask) (*bulkSync, error) {
 func (s *bulkSync) Setup() error {
 	err := s.reader.Open()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to open reader")
 	}
 	err = s.writer.Open()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to open writer")
 	}
 	columns, err := SetupColumnOptions(s.reader, s.columnOpt)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to setup column options")
 	}
 	err = SetupTargetTable(s.writer, s.createTableOpt, columns)
-	return err
+	return errors.Wrap(err, "failed to setup target table")
 }
 
 func (s *bulkSync) BulkSyncData() error {
@@ -172,7 +145,7 @@ func (s *bulkSync) BulkSyncData() error {
 		rows, err := s.reader.BulkRead()
 		s.log.Info("rows count: ", zap.Int("count", len(rows)))
 		if err != nil {
-			return err
+			return errors.Wrap(err, "failed to BulkRead")
 		}
 		// no data
 		if len(rows) == 0 {
@@ -180,9 +153,21 @@ func (s *bulkSync) BulkSyncData() error {
 		}
 		err = s.writer.BulkInsert(rows)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "failed to BulkInsert")
 		}
 		s.curPos += len(rows)
+	}
+	return nil
+}
+
+func (s *bulkSync) Sync() error {
+	err := s.Setup()
+	if err != nil {
+		return errors.Wrap(err, "failed to setup")
+	}
+	err = s.BulkSyncData()
+	if err != nil {
+		return errors.Wrap(err, "failed to BulkSyncData")
 	}
 	return nil
 }

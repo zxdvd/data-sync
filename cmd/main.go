@@ -5,47 +5,52 @@ import (
 	"log"
 	"sync"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	"github.com/pkg/errors"
 	"github.com/zxdvd/data-sync/pkg/conf"
 	dbsync "github.com/zxdvd/data-sync/pkg/sync"
+	"go.uber.org/zap"
 )
 
-func synctask(t *conf.SyncTask) error {
-	bulkSync, err := dbsync.NewSync(t)
+var logger *zap.Logger
+
+func init() {
+	var err error
+	logger, err = zap.NewDevelopment()
 	if err != nil {
-		return err
+		panic(err)
 	}
-	err = bulkSync.Setup()
-	if err != nil {
-		return err
-	}
-	err = bulkSync.BulkSyncData()
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func main() {
 	configfile := flag.String("config", "", "config file path")
 	flag.Parse()
 	if *configfile == "" {
-		log.Fatal("must specify a config file")
+		logger.Fatal("must specify a config file")
 	}
 	config, err := conf.LoadConf(*configfile)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal("parse config error", zap.Error(err))
 	}
 	if len(config.SyncTasks) == 0 {
 		log.Fatal("no tasks")
 	}
 	var wg sync.WaitGroup
-	for _, task := range config.SyncTasks {
+	for name, task := range config.SyncTasks {
+		if task.Disabled {
+			log.Printf("skip disabled task %s\n", name)
+			continue
+		}
 		wg.Add(1)
 		go func(t *conf.SyncTask) {
 			defer wg.Done()
-			err := synctask(t)
+			bulkSync, err := dbsync.NewSync(t)
 			if err != nil {
-				log.Fatal(err)
+				panic(errors.Wrap(err, "failed to NewSync"))
+			}
+			if err := bulkSync.Sync(); err != nil {
+				panic(errors.Wrap(err, "failed to sync"))
 			}
 		}(task)
 	}

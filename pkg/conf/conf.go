@@ -28,6 +28,7 @@ type CreateTableOptions struct {
 
 type SyncTask struct {
 	Name               string
+	Disabled           bool
 	Sourcetable        string
 	Sourcedbname       string  `yaml:"sourcedb"`
 	SourceDB           *DBHost `yaml:"-"`
@@ -55,8 +56,9 @@ func LoadConf(filepath string) (*Conf, error) {
 	if err != nil {
 		return nil, err
 	}
-	for k, _ := range conf.SyncTasks {
-		task := conf.SyncTasks[k]
+	for name, _ := range conf.SyncTasks {
+		task := conf.SyncTasks[name]
+		task.Name = name
 		if host, ok := conf.DBHosts[task.Sourcedbname]; ok {
 			task.SourceDB = host
 		} else {

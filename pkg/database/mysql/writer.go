@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zxdvd/data-sync/pkg/common"
+	"github.com/zxdvd/data-sync/pkg/database/common"
 )
 
 type writer struct {

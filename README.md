@@ -1,5 +1,5 @@
 ## data-sync
-A tool to sync table between databases.
+A tool to sync table between databases (postgres, mysql).
 
 ### Config
 Write a simple yaml config about data source and target to sync tables.
@@ -17,7 +17,6 @@ databases:
 
 tasks:
   task1:
-    name: task1
     sourcetable: r1
     sourcedb: db1
     targettable: w1
@@ -41,8 +40,7 @@ tasks:
 
 ### Run
   go run cmd/main.go --config TASKS.yml
-  
+
 ### TODO
-* mysql support
 * better log
 * incremental sync
