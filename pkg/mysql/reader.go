@@ -47,7 +47,6 @@ var _ common.Reader = &reader{}
 
 func (br *batchReader) BulkRead() ([][]interface{}, error) {
 	q := br.getSelectSql() + fmt.Sprintf("ORDER BY %s LIMIT %d OFFSET %d", br.orderby, br.batchsize, br.pos)
-	// TODO query result
 	_, rows, err := sql.Query(br.DB(), q)
 	if err != nil {
 		return nil, err
