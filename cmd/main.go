@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"log"
 	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -25,6 +24,7 @@ func init() {
 
 func main() {
 	configfile := flag.String("config", "", "config file path")
+	taskname := flag.String("task", "", "run a specific task")
 	flag.Parse()
 	if *configfile == "" {
 		logger.Fatal("must specify a config file")
@@ -34,12 +34,15 @@ func main() {
 		logger.Fatal("parse config error", zap.Error(err))
 	}
 	if len(config.SyncTasks) == 0 {
-		log.Fatal("no tasks")
+		logger.Fatal("no tasks")
 	}
 	var wg sync.WaitGroup
 	for name, task := range config.SyncTasks {
 		if task.Disabled {
-			log.Printf("skip disabled task %s\n", name)
+			logger.Info("skip disabled task " + name)
+			continue
+		}
+		if *taskname != "" && *taskname != name {
 			continue
 		}
 		wg.Add(1)
@@ -55,5 +58,5 @@ func main() {
 		}(task)
 	}
 	wg.Wait()
-	log.Println("all task finished.")
+	logger.Info("all task finished.")
 }
